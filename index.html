@@ -2,7 +2,7 @@
 <html lang="tr">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>Tuana'nın Macerası - 2D Platform</title>
     <style>
         * {
@@ -22,6 +22,7 @@
             justify-content: center;
             min-height: 100vh;
             overflow: hidden;
+            touch-action: none;
         }
         #game-container {
             position: relative;
@@ -29,51 +30,84 @@
             border-radius: 12px;
             overflow: hidden;
             background: #000;
+            width: 100vw;
+            height: 100vh;
+            max-width: 900px;
+            max-height: 500px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
         }
         canvas {
             display: block;
             background: #5c94fc;
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
         }
         .controls-overlay {
             position: absolute;
-            bottom: 10px;
+            bottom: 15px;
             left: 0;
             width: 100%;
             display: flex;
             justify-content: space-between;
-            padding: 0 15px;
+            padding: 0 25px;
             pointer-events: none;
+            z-index: 10;
         }
         .touch-btn {
-            background: rgba(255, 255, 255, 0.25);
-            border: 2px solid rgba(255, 255, 255, 0.5);
+            background: rgba(255, 255, 255, 0.3);
+            border: 2px solid rgba(255, 255, 255, 0.7);
             border-radius: 50%;
-            width: 55px;
-            height: 55px;
+            width: 65px;
+            height: 65px;
             display: flex;
             align-items: center;
             justify-content: center;
             color: white;
             font-weight: bold;
-            font-size: 20px;
+            font-size: 26px;
             pointer-events: auto;
             touch-action: manipulation;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.3);
         }
         .touch-btn:active {
-            background: rgba(255, 255, 255, 0.5);
+            background: rgba(255, 255, 255, 0.6);
+            transform: scale(0.95);
         }
         .btn-group {
             display: flex;
-            gap: 10px;
+            gap: 15px;
         }
-        @media (min-width: 768px) {
-            .controls-overlay {
-                display: none;
+        
+        /* Mobil Dikey Ekran Uyarısı */
+        #orient-warning {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; width: 100vw; height: 100vh;
+            background: #0f172a;
+            z-index: 999;
+            color: #fff;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+            padding: 20px;
+        }
+        @media (max-width: 768px) and (orientation: portrait) {
+            #orient-warning {
+                display: flex;
             }
         }
     </style>
 </head>
 <body>
+
+    <div id="orient-warning">
+        <h2>📱 Lütfen Telefonu Yan Çevirin</h2>
+        <p style="margin-top: 10px; color: #94a3b8;">Daha iyi bir oyun deneyimi için cihazınızı yan tutun.</p>
+    </div>
 
     <div id="game-container">
         <canvas id="gameCanvas" width="800" height="450"></canvas>
@@ -163,6 +197,7 @@ const sound = new SoundFX();
 
 // Oyun Durum Değişkenleri
 let currentLevel = 1;
+let totalLevels = 5;
 let score = 0;
 let lives = 3;
 let gameState = 'PLAYING'; // PLAYING, LEVEL_CLEAR, GAME_OVER, WIN
@@ -203,9 +238,13 @@ window.addEventListener('keyup', e => {
 // Dokunmatik Kontroller
 const bindTouch = (id, keyName) => {
     const btn = document.getElementById(id);
-    btn.addEventListener('touchstart', (e) => {
+    const startHandler = (e) => {
         e.preventDefault();
         sound.init();
+        if (gameState === 'GAME_OVER' || gameState === 'WIN') {
+            resetGame();
+            return;
+        }
         if (keyName === 'jump') {
             if (!keys.jump && player.grounded) {
                 player.vy = player.jumpStrength;
@@ -214,12 +253,17 @@ const bindTouch = (id, keyName) => {
             }
         }
         keys[keyName] = true;
-    });
-    btn.addEventListener('touchend', (e) => {
+    };
+    const endHandler = (e) => {
         e.preventDefault();
         keys[keyName] = false;
-    });
+    };
+    btn.addEventListener('touchstart', startHandler);
+    btn.addEventListener('touchend', endHandler);
+    btn.addEventListener('mousedown', startHandler);
+    btn.addEventListener('mouseup', endHandler);
 };
+
 bindTouch('btn-left', 'left');
 bindTouch('btn-right', 'right');
 bindTouch('btn-jump', 'jump');
@@ -234,7 +278,7 @@ const player = {
     vy: 0,
     speed: 4,
     gravity: 0.5,
-    jumpStrength: -10,
+    jumpStrength: -10.5,
     grounded: false,
     facing: 'right',
     animFrame: 0,
@@ -247,7 +291,7 @@ const player = {
     }
 };
 
-// Bölüm Haritaları Tanımları
+// Bölüm Haritaları
 let platforms = [];
 let coins = [];
 let hazards = [];
@@ -261,7 +305,7 @@ function loadLevel(lvl) {
     floatingTexts = [];
 
     if (lvl === 1) {
-        // Bölüm 1: Kolay Giriş
+        // Bölüm 1: Kolay Başlangıç
         player.reset(50, 300);
         platforms = [
             { x: 0, y: 400, width: 300, height: 50, type: 'ground' },
@@ -278,7 +322,7 @@ function loadLevel(lvl) {
         exitFlag = { x: 860, y: 190, width: 30, height: 60 };
     } 
     else if (lvl === 2) {
-        // Bölüm 2: Hareketli Platformlar ve Dikenler
+        // Bölüm 2: Hareketli Platformlar (Diken Azaltıldı)
         player.reset(40, 300);
         platforms = [
             { x: 0, y: 380, width: 150, height: 70, type: 'ground' },
@@ -286,11 +330,11 @@ function loadLevel(lvl) {
             { x: 380, y: 260, width: 100, height: 20, type: 'wood' },
             { x: 520, y: 220, width: 100, height: 20, type: 'moving', dx: -1.5, minX: 480, maxX: 640 },
             { x: 680, y: 180, width: 200, height: 270, type: 'ground' },
-            { x: 150, y: 430, width: 530, height: 20, type: 'lava' } // Alt Kısım Tehlike
+            { x: 150, y: 430, width: 530, height: 20, type: 'lava' }
         ];
+        // Sadece 1 tane diken bırakıldı
         hazards = [
-            { x: 390, y: 245, width: 30, height: 15 },
-            { x: 430, y: 245, width: 30, height: 15 }
+            { x: 415, y: 245, width: 30, height: 15 }
         ];
         coins = [
             { x: 250, y: 280, collected: false },
@@ -300,7 +344,7 @@ function loadLevel(lvl) {
         exitFlag = { x: 800, y: 120, width: 30, height: 60 };
     } 
     else if (lvl === 3) {
-        // Bölüm 3: Zor Parkur
+        // Bölüm 3: Orta Seviye
         player.reset(40, 200);
         platforms = [
             { x: 0, y: 250, width: 100, height: 200, type: 'ground' },
@@ -323,6 +367,57 @@ function loadLevel(lvl) {
         ];
         exitFlag = { x: 800, y: 100, width: 30, height: 60 };
     }
+    else if (lvl === 4) {
+        // Bölüm 4: Yüksek Hassasiyetli Zıplamalar
+        player.reset(30, 350);
+        platforms = [
+            { x: 0, y: 400, width: 90, height: 50, type: 'ground' },
+            { x: 130, y: 340, width: 50, height: 20, type: 'wood' },
+            { x: 220, y: 280, width: 50, height: 20, type: 'moving', dx: 2.2, minX: 200, maxX: 360 },
+            { x: 400, y: 220, width: 50, height: 20, type: 'wood' },
+            { x: 490, y: 280, width: 50, height: 20, type: 'moving', dx: -2.2, minX: 470, maxX: 630 },
+            { x: 670, y: 200, width: 150, height: 250, type: 'ground' },
+            { x: 0, y: 440, width: 900, height: 20, type: 'lava' }
+        ];
+        hazards = [
+            { x: 140, y: 325, width: 30, height: 15 },
+            { x: 410, y: 205, width: 30, height: 15 }
+        ];
+        coins = [
+            { x: 155, y: 290, collected: false },
+            { x: 280, y: 230, collected: false },
+            { x: 425, y: 170, collected: false },
+            { x: 550, y: 230, collected: false }
+        ];
+        exitFlag = { x: 760, y: 140, width: 30, height: 60 };
+    }
+    else if (lvl === 5) {
+        // Bölüm 5: Final Zirve Parkuru
+        player.reset(30, 380);
+        platforms = [
+            { x: 0, y: 420, width: 80, height: 30, type: 'ground' },
+            { x: 110, y: 360, width: 45, height: 18, type: 'wood' },
+            { x: 190, y: 300, width: 45, height: 18, type: 'moving', dx: 2.5, minX: 180, maxX: 320 },
+            { x: 350, y: 240, width: 45, height: 18, type: 'wood' },
+            { x: 430, y: 180, width: 45, height: 18, type: 'moving', dx: -2.5, minX: 420, maxX: 580 },
+            { x: 610, y: 130, width: 45, height: 18, type: 'wood' },
+            { x: 690, y: 180, width: 150, height: 300, type: 'ground' },
+            { x: 0, y: 440, width: 900, height: 20, type: 'lava' }
+        ];
+        hazards = [
+            { x: 118, y: 345, width: 28, height: 15 },
+            { x: 358, y: 225, width: 28, height: 15 },
+            { x: 618, y: 115, width: 28, height: 15 }
+        ];
+        coins = [
+            { x: 130, y: 310, collected: false },
+            { x: 250, y: 250, collected: false },
+            { x: 370, y: 190, collected: false },
+            { x: 500, y: 130, collected: false },
+            { x: 630, y: 80, collected: false }
+        ];
+        exitFlag = { x: 770, y: 120, width: 30, height: 60 };
+    }
 }
 
 function resetGame() {
@@ -333,7 +428,7 @@ function resetGame() {
     loadLevel(currentLevel);
 }
 
-// Çarpışma Kontrol Fonksiyonları (AABB ve Daire)
+// Çarpışma Kontrol Fonksiyonları
 function checkRectCollision(r1, r2) {
     return r1.x < r2.x + r2.width &&
            r1.x + r1.width > r2.x &&
@@ -379,7 +474,7 @@ function update() {
     // Yerçekimi
     player.vy += player.gravity;
 
-    // Hareketli Platformları Güncelle
+    // Hareketli Platformlar
     platforms.forEach(p => {
         if (p.type === 'moving') {
             p.x += p.dx;
@@ -389,7 +484,7 @@ function update() {
         }
     });
 
-    // Yatay Çarpışma ve Hareket
+    // Yatay Çarpışma
     player.x += player.vx;
     platforms.forEach(p => {
         if (p.type === 'lava') return;
@@ -399,7 +494,7 @@ function update() {
         }
     });
 
-    // Dikey Çarpışma ve Hareket
+    // Dikey Çarpışma
     player.y += player.vy;
     player.grounded = false;
 
@@ -409,11 +504,10 @@ function update() {
                 die();
                 return;
             }
-            if (player.vy > 0 && (player.y + player.height - player.vy) <= p.y + 10) {
+            if (player.vy > 0 && (player.y + player.height - player.vy) <= p.y + 12) {
                 player.y = p.y - player.height;
                 player.vy = 0;
                 player.grounded = true;
-                // Hareketli platform üstündeyse onunla sürüklen
                 if (p.type === 'moving') {
                     player.x += p.dx;
                 }
@@ -424,12 +518,12 @@ function update() {
         }
     });
 
-    // Harita Dışına Düşme
+    // Haritadan Düşme
     if (player.y > canvas.height + 50) {
         die();
     }
 
-    // Coin Toplama Kontrolü
+    // Coin Toplama
     coins.forEach(c => {
         if (!c.collected) {
             let coinCircle = { x: c.x, y: c.y, r: 10 };
@@ -455,35 +549,34 @@ function update() {
         }
     });
 
-    // Bayrak / Bölüm Bitiş Kontrolü
+    // Bölüm Sonu Bayrak Kontrolü
     if (checkRectCollision(player, exitFlag)) {
         sound.playWin();
-        if (currentLevel < 3) {
+        if (currentLevel < totalLevels) {
             gameState = 'LEVEL_CLEAR';
-            levelClearTimer = 90; // Yaklaşık 1.5 saniye bekleme
+            levelClearTimer = 80;
         } else {
             gameState = 'WIN';
         }
     }
 
-    // Yüzen Metinleri Güncelle
+    // Yüzen Metinler
     floatingTexts.forEach((ft, index) => {
         ft.y += ft.vy;
         ft.alpha -= 0.02;
         if (ft.alpha <= 0) floatingTexts.splice(index, 1);
     });
 
-    // Animasyon Sayacı
     if (Math.abs(player.vx) > 0) player.animFrame += 0.2;
 }
 
 // Çizim Döngüsü
 function draw() {
-    // Arka Plan Gökyüzü
+    // Arka Plan
     ctx.fillStyle = '#5c94fc';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-    // Bulutlar (Dekorasyon)
+    // Bulutlar
     ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
     ctx.beginPath();
     ctx.arc(100, 80, 25, 0, Math.PI * 2);
@@ -500,9 +593,9 @@ function draw() {
     // Platformlar
     platforms.forEach(p => {
         if (p.type === 'ground') {
-            ctx.fillStyle = '#48a028'; // Çim Üst
+            ctx.fillStyle = '#48a028';
             ctx.fillRect(p.x, p.y, p.width, 10);
-            ctx.fillStyle = '#8b5a2b'; // Toprak Alt
+            ctx.fillStyle = '#8b5a2b';
             ctx.fillRect(p.x, p.y + 10, p.width, p.height - 10);
         } else if (p.type === 'wood' || p.type === 'moving') {
             ctx.fillStyle = p.type === 'moving' ? '#d97706' : '#b45309';
@@ -516,7 +609,7 @@ function draw() {
         }
     });
 
-    // Dikenler (Hazards)
+    // Dikenler
     hazards.forEach(h => {
         ctx.fillStyle = '#9ca3af';
         ctx.beginPath();
@@ -540,7 +633,6 @@ function draw() {
             ctx.lineWidth = 2;
             ctx.stroke();
 
-            // Parlama
             ctx.fillStyle = '#fff';
             ctx.beginPath();
             ctx.arc(c.x - 3, c.y - 3, 3, 0, Math.PI * 2);
@@ -548,7 +640,7 @@ function draw() {
         }
     });
 
-    // Çıkış Bayrağı (Bölüm Sonu)
+    // Bitiş Bayrağı
     ctx.fillStyle = '#6b7280';
     ctx.fillRect(exitFlag.x, exitFlag.y, 6, exitFlag.height);
     ctx.fillStyle = '#22c55e';
@@ -559,20 +651,20 @@ function draw() {
     ctx.closePath();
     ctx.fill();
 
-    // TUANA Karakter Çizimi (Piksel Stili)
+    // TUANA Karakteri
     ctx.save();
     let px = player.x;
     let py = player.y;
 
-    // Gövde / Kıyafet (Pembe/Kırmızı)
+    // Kıyafet
     ctx.fillStyle = '#ec4899';
     ctx.fillRect(px + 4, py + 14, 20, 16);
 
-    // Kafası / Cilt
+    // Yüz
     ctx.fillStyle = '#fed7aa';
     ctx.fillRect(px + 6, py + 4, 16, 12);
 
-    // Saçlar (Kahverengi)
+    // Saç
     ctx.fillStyle = '#78350f';
     ctx.fillRect(px + 4, py + 2, 20, 6);
     ctx.fillRect(px + (player.facing === 'right' ? 2 : 18), py + 6, 8, 12);
@@ -589,26 +681,24 @@ function draw() {
     ctx.fillRect(px + 6, py + 30, 6, 10 - legOffset);
     ctx.fillRect(px + 16, py + 30, 6, 10 + legOffset);
 
-    // KARAKTERİN TEPESİNDEKİ "TUANA" İSMİ
+    // TUANA İsmi
     ctx.font = 'bold 12px monospace';
     ctx.textAlign = 'center';
     let nameX = px + player.width / 2;
     let nameY = py - 12;
 
-    // İsim Arka Planı
     ctx.fillStyle = 'rgba(0,0,0,0.6)';
     ctx.fillRect(nameX - 25, nameY - 11, 50, 15);
     ctx.strokeStyle = '#facc15';
     ctx.lineWidth = 1;
     ctx.strokeRect(nameX - 25, nameY - 11, 50, 15);
 
-    // İsim Metni
     ctx.fillStyle = '#facc15';
     ctx.fillText('TUANA', nameX, nameY);
 
     ctx.restore();
 
-    // Yüzen Metinler (+100 Coin)
+    // Yüzen Skolar
     floatingTexts.forEach(ft => {
         ctx.save();
         ctx.globalAlpha = ft.alpha;
@@ -618,23 +708,22 @@ function draw() {
         ctx.restore();
     });
 
-    // UI - Üst Bilgi Paneli (Skor, Can, Bölüm)
+    // Üst Panel
     ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
     ctx.fillRect(0, 0, canvas.width, 40);
 
     ctx.font = 'bold 16px sans-serif';
     ctx.fillStyle = '#fff';
     ctx.textAlign = 'left';
-    ctx.fillText(`BÖLÜM: ${currentLevel}/3`, 20, 25);
+    ctx.fillText(`BÖLÜM: ${currentLevel}/${totalLevels}`, 20, 25);
     ctx.fillText(`SKOR: ${score}`, 200, 25);
 
-    // Can Kalpleri
     ctx.fillStyle = '#ef4444';
     let hearts = '';
     for (let i = 0; i < lives; i++) hearts += '❤️ ';
     ctx.fillText(`CAN: ${hearts}`, 650, 25);
 
-    // EKRAN DURUMLARI (LEVEL CLEAR, GAME OVER, WIN)
+    // Durum Ekranları
     if (gameState === 'LEVEL_CLEAR') {
         ctx.fillStyle = 'rgba(0,0,0,0.7)';
         ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -655,28 +744,28 @@ function draw() {
         ctx.fillStyle = '#ef4444';
         ctx.font = 'bold 42px sans-serif';
         ctx.textAlign = 'center';
-        ctx.fillText('OYNANAMADI - OYUN BİTTİ', canvas.width / 2, canvas.height / 2 - 20);
+        ctx.fillText('OYUN BİTTİ', canvas.width / 2, canvas.height / 2 - 20);
         ctx.fillStyle = '#fff';
         ctx.font = '20px sans-serif';
-        ctx.fillText('Yeniden Başlamak için "R" Tuşuna Basın', canvas.width / 2, canvas.height / 2 + 30);
+        ctx.fillText('Yeniden Başlamak İçin Dokunun veya "R" Tuşuna Basın', canvas.width / 2, canvas.height / 2 + 30);
     } else if (gameState === 'WIN') {
         ctx.fillStyle = 'rgba(0,0,0,0.85)';
         ctx.fillRect(0, 0, canvas.width, canvas.height);
         ctx.fillStyle = '#facc15';
-        ctx.font = 'bold 40px sans-serif';
+        ctx.font = 'bold 38px sans-serif';
         ctx.textAlign = 'center';
         ctx.fillText('TEBRİKLER! OYUNU KAZANDIN!', canvas.width / 2, canvas.height / 2 - 30);
         ctx.fillStyle = '#fff';
-        ctx.font = '22px sans-serif';
-        ctx.fillText(`Tuana Bütün Parkurları Başarıyla Tamamladı!`, canvas.width / 2, canvas.height / 2 + 10);
+        ctx.font = '20px sans-serif';
+        ctx.fillText(`Tuana Tüm 5 Bölümü Başarıyla Tamamladı!`, canvas.width / 2, canvas.height / 2 + 10);
         ctx.fillText(`Toplam Skor: ${score}`, canvas.width / 2, canvas.height / 2 + 45);
         ctx.font = '16px sans-serif';
         ctx.fillStyle = '#9ca3af';
-        ctx.fillText('Tekrar Oynamak için "R" Tuşuna Basın', canvas.width / 2, canvas.height / 2 + 85);
+        ctx.fillText('Tekrar Oynamak İçin Dokunun veya "R" Tuşuna Basın', canvas.width / 2, canvas.height / 2 + 85);
     }
 }
 
-// Ana Oyun Döngüsü (Game Loop)
+// Oyun Döngüsü
 function gameLoop() {
     update();
     draw();
