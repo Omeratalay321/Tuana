@@ -201,7 +201,7 @@ const sound = new SoundFX();
 let currentLevel = 1;
 let totalLevels = 5;
 let score = 0;
-let lives = 3;
+let lives = 10;
 let gameState = 'PLAYING';
 let levelClearTimer = 0;
 
@@ -466,7 +466,7 @@ function loadLevel(lvl) {
 
 function resetGame() {
     score = 0;
-    lives = 3;
+    lives = 10;
     currentLevel = 1;
     gameState = 'PLAYING';
     loadLevel(currentLevel);
