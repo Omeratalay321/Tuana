@@ -203,6 +203,45 @@ let lives = 3;
 let gameState = 'PLAYING'; // PLAYING, LEVEL_CLEAR, GAME_OVER, WIN
 let levelClearTimer = 0;
 
+// Admin Hile Kombinasyonu Yönetimi (3 Sağa, 3 Sola, 3 Yukarı)
+const adminCode = ['RIGHT', 'RIGHT', 'RIGHT', 'LEFT', 'LEFT', 'LEFT', 'UP', 'UP', 'UP'];
+let inputBuffer = [];
+let adminNoticeTimer = 0;
+
+function checkAdminCode(action) {
+    inputBuffer.push(action);
+    if (inputBuffer.length > adminCode.length) {
+        inputBuffer.shift();
+    }
+    
+    // Kombinasyon eşleşti mi kontrol et
+    if (inputBuffer.length === adminCode.length) {
+        let isMatch = true;
+        for (let i = 0; i < adminCode.length; i++) {
+            if (inputBuffer[i] !== adminCode[i]) {
+                isMatch = false;
+                break;
+            }
+        }
+        if (isMatch) {
+            triggerAdminSkip();
+            inputBuffer = [];
+        }
+    }
+}
+
+function triggerAdminSkip() {
+    sound.playWin();
+    adminNoticeTimer = 120; // Hile bildirim metni süresi
+    if (currentLevel < totalLevels) {
+        currentLevel++;
+        loadLevel(currentLevel);
+        gameState = 'PLAYING';
+    } else {
+        gameState = 'WIN';
+    }
+}
+
 // Tuş Kontrolleri
 const keys = {
     left: false,
@@ -212,13 +251,22 @@ const keys = {
 
 window.addEventListener('keydown', e => {
     sound.init();
-    if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') keys.left = true;
-    if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') keys.right = true;
+    if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') {
+        if (!keys.left) checkAdminCode('LEFT');
+        keys.left = true;
+    }
+    if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') {
+        if (!keys.right) checkAdminCode('RIGHT');
+        keys.right = true;
+    }
     if (e.key === 'ArrowUp' || e.key === 'w' || e.key === 'W' || e.key === ' ') {
-        if (!keys.jump && player.grounded) {
-            player.vy = player.jumpStrength;
-            player.grounded = false;
-            sound.playJump();
+        if (!keys.jump) {
+            checkAdminCode('UP');
+            if (player.grounded) {
+                player.vy = player.jumpStrength;
+                player.grounded = false;
+                sound.playJump();
+            }
         }
         keys.jump = true;
     }
@@ -236,7 +284,7 @@ window.addEventListener('keyup', e => {
 });
 
 // Dokunmatik Kontroller
-const bindTouch = (id, keyName) => {
+const bindTouch = (id, keyName, codeAction) => {
     const btn = document.getElementById(id);
     const startHandler = (e) => {
         e.preventDefault();
@@ -245,6 +293,7 @@ const bindTouch = (id, keyName) => {
             resetGame();
             return;
         }
+        checkAdminCode(codeAction);
         if (keyName === 'jump') {
             if (!keys.jump && player.grounded) {
                 player.vy = player.jumpStrength;
@@ -264,9 +313,9 @@ const bindTouch = (id, keyName) => {
     btn.addEventListener('mouseup', endHandler);
 };
 
-bindTouch('btn-left', 'left');
-bindTouch('btn-right', 'right');
-bindTouch('btn-jump', 'jump');
+bindTouch('btn-left', 'left', 'LEFT');
+bindTouch('btn-right', 'right', 'RIGHT');
+bindTouch('btn-jump', 'jump', 'UP');
 
 // Karakter (Tuana)
 const player = {
@@ -305,7 +354,6 @@ function loadLevel(lvl) {
     floatingTexts = [];
 
     if (lvl === 1) {
-        // Bölüm 1: Kolay Başlangıç
         player.reset(50, 300);
         platforms = [
             { x: 0, y: 400, width: 300, height: 50, type: 'ground' },
@@ -322,7 +370,6 @@ function loadLevel(lvl) {
         exitFlag = { x: 860, y: 190, width: 30, height: 60 };
     } 
     else if (lvl === 2) {
-        // Bölüm 2: Hareketli Platformlar (Diken Azaltıldı)
         player.reset(40, 300);
         platforms = [
             { x: 0, y: 380, width: 150, height: 70, type: 'ground' },
@@ -332,7 +379,6 @@ function loadLevel(lvl) {
             { x: 680, y: 180, width: 200, height: 270, type: 'ground' },
             { x: 150, y: 430, width: 530, height: 20, type: 'lava' }
         ];
-        // Sadece 1 tane diken bırakıldı
         hazards = [
             { x: 415, y: 245, width: 30, height: 15 }
         ];
@@ -344,7 +390,6 @@ function loadLevel(lvl) {
         exitFlag = { x: 800, y: 120, width: 30, height: 60 };
     } 
     else if (lvl === 3) {
-        // Bölüm 3: Orta Seviye
         player.reset(40, 200);
         platforms = [
             { x: 0, y: 250, width: 100, height: 200, type: 'ground' },
@@ -368,7 +413,6 @@ function loadLevel(lvl) {
         exitFlag = { x: 800, y: 100, width: 30, height: 60 };
     }
     else if (lvl === 4) {
-        // Bölüm 4: Yüksek Hassasiyetli Zıplamalar
         player.reset(30, 350);
         platforms = [
             { x: 0, y: 400, width: 90, height: 50, type: 'ground' },
@@ -392,7 +436,6 @@ function loadLevel(lvl) {
         exitFlag = { x: 760, y: 140, width: 30, height: 60 };
     }
     else if (lvl === 5) {
-        // Bölüm 5: Final Zirve Parkuru
         player.reset(30, 380);
         platforms = [
             { x: 0, y: 420, width: 80, height: 30, type: 'ground' },
@@ -459,6 +502,8 @@ function die() {
 // Güncelleme Döngüsü
 function update() {
     if (gameState !== 'PLAYING') return;
+
+    if (adminNoticeTimer > 0) adminNoticeTimer--;
 
     // Yatay Hareket
     if (keys.left) {
@@ -722,6 +767,14 @@ function draw() {
     let hearts = '';
     for (let i = 0; i < lives; i++) hearts += '❤️ ';
     ctx.fillText(`CAN: ${hearts}`, 650, 25);
+
+    // Admin Hile Bildirimi
+    if (adminNoticeTimer > 0) {
+        ctx.fillStyle = '#38bdf8';
+        ctx.font = 'bold 16px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('⚡ ADMİN HİLESİ: SONRAKİ BÖLÜME GEÇİLDİ! ⚡', canvas.width / 2, 25);
+    }
 
     // Durum Ekranları
     if (gameState === 'LEVEL_CLEAR') {
