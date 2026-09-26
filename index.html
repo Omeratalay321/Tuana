@@ -1,0 +1,692 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Tuana'nın Macerası - 2D Platform</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+        body {
+            background: #111827;
+            color: #fff;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            overflow: hidden;
+        }
+        #game-container {
+            position: relative;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+            border-radius: 12px;
+            overflow: hidden;
+            background: #000;
+        }
+        canvas {
+            display: block;
+            background: #5c94fc;
+        }
+        .controls-overlay {
+            position: absolute;
+            bottom: 10px;
+            left: 0;
+            width: 100%;
+            display: flex;
+            justify-content: space-between;
+            padding: 0 15px;
+            pointer-events: none;
+        }
+        .touch-btn {
+            background: rgba(255, 255, 255, 0.25);
+            border: 2px solid rgba(255, 255, 255, 0.5);
+            border-radius: 50%;
+            width: 55px;
+            height: 55px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: bold;
+            font-size: 20px;
+            pointer-events: auto;
+            touch-action: manipulation;
+        }
+        .touch-btn:active {
+            background: rgba(255, 255, 255, 0.5);
+        }
+        .btn-group {
+            display: flex;
+            gap: 10px;
+        }
+        @media (min-width: 768px) {
+            .controls-overlay {
+                display: none;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <div id="game-container">
+        <canvas id="gameCanvas" width="800" height="450"></canvas>
+        <div class="controls-overlay">
+            <div class="btn-group">
+                <div class="touch-btn" id="btn-left">◀</div>
+                <div class="touch-btn" id="btn-right">▶</div>
+            </div>
+            <div class="touch-btn" id="btn-jump">▲</div>
+        </div>
+    </div>
+
+<script>
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+
+// Web Audio API Sentezleyici
+class SoundFX {
+    constructor() {
+        this.ctx = null;
+    }
+    init() {
+        if (!this.ctx) {
+            this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+        }
+    }
+    playJump() {
+        if (!this.ctx) return;
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+        osc.type = 'square';
+        osc.frequency.setValueAtTime(150, this.ctx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(400, this.ctx.currentTime + 0.15);
+        gain.gain.setValueAtTime(0.1, this.ctx.currentTime);
+        gain.gain.linearRampToValueAtTime(0.01, this.ctx.currentTime + 0.15);
+        osc.start();
+        osc.stop(this.ctx.currentTime + 0.15);
+    }
+    playCoin() {
+        if (!this.ctx) return;
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(800, this.ctx.currentTime);
+        osc.frequency.setValueAtTime(1200, this.ctx.currentTime + 0.08);
+        gain.gain.setValueAtTime(0.1, this.ctx.currentTime);
+        gain.gain.linearRampToValueAtTime(0.01, this.ctx.currentTime + 0.2);
+        osc.start();
+        osc.stop(this.ctx.currentTime + 0.2);
+    }
+    playDeath() {
+        if (!this.ctx) return;
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(300, this.ctx.currentTime);
+        osc.frequency.linearRampToValueAtTime(80, this.ctx.currentTime + 0.3);
+        gain.gain.setValueAtTime(0.15, this.ctx.currentTime);
+        gain.gain.linearRampToValueAtTime(0.01, this.ctx.currentTime + 0.3);
+        osc.start();
+        osc.stop(this.ctx.currentTime + 0.3);
+    }
+    playWin() {
+        if (!this.ctx) return;
+        const notes = [400, 500, 600, 800];
+        notes.forEach((freq, idx) => {
+            const osc = this.ctx.createOscillator();
+            const gain = this.ctx.createGain();
+            osc.connect(gain);
+            gain.connect(this.ctx.destination);
+            osc.frequency.setValueAtTime(freq, this.ctx.currentTime + idx * 0.1);
+            gain.gain.setValueAtTime(0.1, this.ctx.currentTime + idx * 0.1);
+            gain.gain.linearRampToValueAtTime(0.01, this.ctx.currentTime + idx * 0.1 + 0.1);
+            osc.start(this.ctx.currentTime + idx * 0.1);
+            osc.stop(this.ctx.currentTime + idx * 0.1 + 0.1);
+        });
+    }
+}
+
+const sound = new SoundFX();
+
+// Oyun Durum Değişkenleri
+let currentLevel = 1;
+let score = 0;
+let lives = 3;
+let gameState = 'PLAYING'; // PLAYING, LEVEL_CLEAR, GAME_OVER, WIN
+let levelClearTimer = 0;
+
+// Tuş Kontrolleri
+const keys = {
+    left: false,
+    right: false,
+    jump: false
+};
+
+window.addEventListener('keydown', e => {
+    sound.init();
+    if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') keys.left = true;
+    if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') keys.right = true;
+    if (e.key === 'ArrowUp' || e.key === 'w' || e.key === 'W' || e.key === ' ') {
+        if (!keys.jump && player.grounded) {
+            player.vy = player.jumpStrength;
+            player.grounded = false;
+            sound.playJump();
+        }
+        keys.jump = true;
+    }
+    if (e.key === 'r' || e.key === 'R') {
+        if (gameState === 'GAME_OVER' || gameState === 'WIN') {
+            resetGame();
+        }
+    }
+});
+
+window.addEventListener('keyup', e => {
+    if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') keys.left = false;
+    if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') keys.right = false;
+    if (e.key === 'ArrowUp' || e.key === 'w' || e.key === 'W' || e.key === ' ') keys.jump = false;
+});
+
+// Dokunmatik Kontroller
+const bindTouch = (id, keyName) => {
+    const btn = document.getElementById(id);
+    btn.addEventListener('touchstart', (e) => {
+        e.preventDefault();
+        sound.init();
+        if (keyName === 'jump') {
+            if (!keys.jump && player.grounded) {
+                player.vy = player.jumpStrength;
+                player.grounded = false;
+                sound.playJump();
+            }
+        }
+        keys[keyName] = true;
+    });
+    btn.addEventListener('touchend', (e) => {
+        e.preventDefault();
+        keys[keyName] = false;
+    });
+};
+bindTouch('btn-left', 'left');
+bindTouch('btn-right', 'right');
+bindTouch('btn-jump', 'jump');
+
+// Karakter (Tuana)
+const player = {
+    x: 50,
+    y: 300,
+    width: 28,
+    height: 40,
+    vx: 0,
+    vy: 0,
+    speed: 4,
+    gravity: 0.5,
+    jumpStrength: -10,
+    grounded: false,
+    facing: 'right',
+    animFrame: 0,
+    reset(x = 50, y = 300) {
+        this.x = x;
+        this.y = y;
+        this.vx = 0;
+        this.vy = 0;
+        this.grounded = false;
+    }
+};
+
+// Bölüm Haritaları Tanımları
+let platforms = [];
+let coins = [];
+let hazards = [];
+let exitFlag = { x: 0, y: 0, width: 30, height: 60 };
+let floatingTexts = [];
+
+function loadLevel(lvl) {
+    platforms = [];
+    coins = [];
+    hazards = [];
+    floatingTexts = [];
+
+    if (lvl === 1) {
+        // Bölüm 1: Kolay Giriş
+        player.reset(50, 300);
+        platforms = [
+            { x: 0, y: 400, width: 300, height: 50, type: 'ground' },
+            { x: 350, y: 350, width: 120, height: 20, type: 'wood' },
+            { x: 520, y: 300, width: 120, height: 20, type: 'wood' },
+            { x: 680, y: 250, width: 250, height: 200, type: 'ground' }
+        ];
+        coins = [
+            { x: 200, y: 360, collected: false },
+            { x: 400, y: 310, collected: false },
+            { x: 570, y: 260, collected: false },
+            { x: 730, y: 210, collected: false }
+        ];
+        exitFlag = { x: 860, y: 190, width: 30, height: 60 };
+    } 
+    else if (lvl === 2) {
+        // Bölüm 2: Hareketli Platformlar ve Dikenler
+        player.reset(40, 300);
+        platforms = [
+            { x: 0, y: 380, width: 150, height: 70, type: 'ground' },
+            { x: 200, y: 320, width: 100, height: 20, type: 'moving', dx: 1.5, minX: 180, maxX: 340 },
+            { x: 380, y: 260, width: 100, height: 20, type: 'wood' },
+            { x: 520, y: 220, width: 100, height: 20, type: 'moving', dx: -1.5, minX: 480, maxX: 640 },
+            { x: 680, y: 180, width: 200, height: 270, type: 'ground' },
+            { x: 150, y: 430, width: 530, height: 20, type: 'lava' } // Alt Kısım Tehlike
+        ];
+        hazards = [
+            { x: 390, y: 245, width: 30, height: 15 },
+            { x: 430, y: 245, width: 30, height: 15 }
+        ];
+        coins = [
+            { x: 250, y: 280, collected: false },
+            { x: 430, y: 210, collected: false },
+            { x: 570, y: 170, collected: false }
+        ];
+        exitFlag = { x: 800, y: 120, width: 30, height: 60 };
+    } 
+    else if (lvl === 3) {
+        // Bölüm 3: Zor Parkur
+        player.reset(40, 200);
+        platforms = [
+            { x: 0, y: 250, width: 100, height: 200, type: 'ground' },
+            { x: 140, y: 300, width: 70, height: 20, type: 'wood' },
+            { x: 250, y: 350, width: 70, height: 20, type: 'moving', dx: 2, minX: 230, maxX: 380 },
+            { x: 430, y: 280, width: 60, height: 20, type: 'wood' },
+            { x: 530, y: 220, width: 60, height: 20, type: 'moving', dx: -2, minX: 500, maxX: 650 },
+            { x: 700, y: 160, width: 180, height: 300, type: 'ground' },
+            { x: 0, y: 440, width: 900, height: 20, type: 'lava' }
+        ];
+        hazards = [
+            { x: 155, y: 285, width: 30, height: 15 },
+            { x: 445, y: 265, width: 30, height: 15 }
+        ];
+        coins = [
+            { x: 175, y: 250, collected: false },
+            { x: 310, y: 300, collected: false },
+            { x: 460, y: 230, collected: false },
+            { x: 590, y: 170, collected: false }
+        ];
+        exitFlag = { x: 800, y: 100, width: 30, height: 60 };
+    }
+}
+
+function resetGame() {
+    score = 0;
+    lives = 3;
+    currentLevel = 1;
+    gameState = 'PLAYING';
+    loadLevel(currentLevel);
+}
+
+// Çarpışma Kontrol Fonksiyonları (AABB ve Daire)
+function checkRectCollision(r1, r2) {
+    return r1.x < r2.x + r2.width &&
+           r1.x + r1.width > r2.x &&
+           r1.y < r2.y + r2.height &&
+           r1.y + r1.height > r2.y;
+}
+
+function checkCircleRectCollision(circle, rect) {
+    let closestX = Math.max(rect.x, Math.min(circle.x, rect.x + rect.width));
+    let closestY = Math.max(rect.y, Math.min(circle.y, rect.y + rect.height));
+
+    let distanceX = circle.x - closestX;
+    let distanceY = circle.y - closestY;
+
+    return (distanceX * distanceX + distanceY * distanceY) < (circle.r * circle.r);
+}
+
+function die() {
+    sound.playDeath();
+    lives--;
+    if (lives <= 0) {
+        gameState = 'GAME_OVER';
+    } else {
+        loadLevel(currentLevel);
+    }
+}
+
+// Güncelleme Döngüsü
+function update() {
+    if (gameState !== 'PLAYING') return;
+
+    // Yatay Hareket
+    if (keys.left) {
+        player.vx = -player.speed;
+        player.facing = 'left';
+    } else if (keys.right) {
+        player.vx = player.speed;
+        player.facing = 'right';
+    } else {
+        player.vx = 0;
+    }
+
+    // Yerçekimi
+    player.vy += player.gravity;
+
+    // Hareketli Platformları Güncelle
+    platforms.forEach(p => {
+        if (p.type === 'moving') {
+            p.x += p.dx;
+            if (p.x <= p.minX || p.x + p.width >= p.maxX) {
+                p.dx *= -1;
+            }
+        }
+    });
+
+    // Yatay Çarpışma ve Hareket
+    player.x += player.vx;
+    platforms.forEach(p => {
+        if (p.type === 'lava') return;
+        if (checkRectCollision(player, p)) {
+            if (player.vx > 0) player.x = p.x - player.width;
+            else if (player.vx < 0) player.x = p.x + p.width;
+        }
+    });
+
+    // Dikey Çarpışma ve Hareket
+    player.y += player.vy;
+    player.grounded = false;
+
+    platforms.forEach(p => {
+        if (checkRectCollision(player, p)) {
+            if (p.type === 'lava') {
+                die();
+                return;
+            }
+            if (player.vy > 0 && (player.y + player.height - player.vy) <= p.y + 10) {
+                player.y = p.y - player.height;
+                player.vy = 0;
+                player.grounded = true;
+                // Hareketli platform üstündeyse onunla sürüklen
+                if (p.type === 'moving') {
+                    player.x += p.dx;
+                }
+            } else if (player.vy < 0) {
+                player.y = p.y + p.height;
+                player.vy = 0;
+            }
+        }
+    });
+
+    // Harita Dışına Düşme
+    if (player.y > canvas.height + 50) {
+        die();
+    }
+
+    // Coin Toplama Kontrolü
+    coins.forEach(c => {
+        if (!c.collected) {
+            let coinCircle = { x: c.x, y: c.y, r: 10 };
+            if (checkCircleRectCollision(coinCircle, player)) {
+                c.collected = true;
+                score += 100;
+                sound.playCoin();
+                floatingTexts.push({
+                    text: '+100',
+                    x: c.x,
+                    y: c.y,
+                    alpha: 1,
+                    vy: -1
+                });
+            }
+        }
+    });
+
+    // Diken/Tehlike Çarpışması
+    hazards.forEach(h => {
+        if (checkRectCollision(player, h)) {
+            die();
+        }
+    });
+
+    // Bayrak / Bölüm Bitiş Kontrolü
+    if (checkRectCollision(player, exitFlag)) {
+        sound.playWin();
+        if (currentLevel < 3) {
+            gameState = 'LEVEL_CLEAR';
+            levelClearTimer = 90; // Yaklaşık 1.5 saniye bekleme
+        } else {
+            gameState = 'WIN';
+        }
+    }
+
+    // Yüzen Metinleri Güncelle
+    floatingTexts.forEach((ft, index) => {
+        ft.y += ft.vy;
+        ft.alpha -= 0.02;
+        if (ft.alpha <= 0) floatingTexts.splice(index, 1);
+    });
+
+    // Animasyon Sayacı
+    if (Math.abs(player.vx) > 0) player.animFrame += 0.2;
+}
+
+// Çizim Döngüsü
+function draw() {
+    // Arka Plan Gökyüzü
+    ctx.fillStyle = '#5c94fc';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    // Bulutlar (Dekorasyon)
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+    ctx.beginPath();
+    ctx.arc(100, 80, 25, 0, Math.PI * 2);
+    ctx.arc(130, 70, 35, 0, Math.PI * 2);
+    ctx.arc(160, 80, 25, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.beginPath();
+    ctx.arc(500, 100, 20, 0, Math.PI * 2);
+    ctx.arc(525, 90, 30, 0, Math.PI * 2);
+    ctx.arc(550, 100, 20, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Platformlar
+    platforms.forEach(p => {
+        if (p.type === 'ground') {
+            ctx.fillStyle = '#48a028'; // Çim Üst
+            ctx.fillRect(p.x, p.y, p.width, 10);
+            ctx.fillStyle = '#8b5a2b'; // Toprak Alt
+            ctx.fillRect(p.x, p.y + 10, p.width, p.height - 10);
+        } else if (p.type === 'wood' || p.type === 'moving') {
+            ctx.fillStyle = p.type === 'moving' ? '#d97706' : '#b45309';
+            ctx.fillRect(p.x, p.y, p.width, p.height);
+            ctx.strokeStyle = '#78350f';
+            ctx.lineWidth = 2;
+            ctx.strokeRect(p.x, p.y, p.width, p.height);
+        } else if (p.type === 'lava') {
+            ctx.fillStyle = '#ef4444';
+            ctx.fillRect(p.x, p.y, p.width, p.height);
+        }
+    });
+
+    // Dikenler (Hazards)
+    hazards.forEach(h => {
+        ctx.fillStyle = '#9ca3af';
+        ctx.beginPath();
+        ctx.moveTo(h.x, h.y + h.height);
+        ctx.lineTo(h.x + h.width / 2, h.y);
+        ctx.lineTo(h.x + h.width, h.y + h.height);
+        ctx.closePath();
+        ctx.fill();
+        ctx.strokeStyle = '#4b5563';
+        ctx.stroke();
+    });
+
+    // Coinler
+    coins.forEach(c => {
+        if (!c.collected) {
+            ctx.fillStyle = '#facc15';
+            ctx.beginPath();
+            ctx.arc(c.x, c.y, 9, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.strokeStyle = '#ca8a04';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+
+            // Parlama
+            ctx.fillStyle = '#fff';
+            ctx.beginPath();
+            ctx.arc(c.x - 3, c.y - 3, 3, 0, Math.PI * 2);
+            ctx.fill();
+        }
+    });
+
+    // Çıkış Bayrağı (Bölüm Sonu)
+    ctx.fillStyle = '#6b7280';
+    ctx.fillRect(exitFlag.x, exitFlag.y, 6, exitFlag.height);
+    ctx.fillStyle = '#22c55e';
+    ctx.beginPath();
+    ctx.moveTo(exitFlag.x + 6, exitFlag.y);
+    ctx.lineTo(exitFlag.x + exitFlag.width, exitFlag.y + 15);
+    ctx.lineTo(exitFlag.x + 6, exitFlag.y + 30);
+    ctx.closePath();
+    ctx.fill();
+
+    // TUANA Karakter Çizimi (Piksel Stili)
+    ctx.save();
+    let px = player.x;
+    let py = player.y;
+
+    // Gövde / Kıyafet (Pembe/Kırmızı)
+    ctx.fillStyle = '#ec4899';
+    ctx.fillRect(px + 4, py + 14, 20, 16);
+
+    // Kafası / Cilt
+    ctx.fillStyle = '#fed7aa';
+    ctx.fillRect(px + 6, py + 4, 16, 12);
+
+    // Saçlar (Kahverengi)
+    ctx.fillStyle = '#78350f';
+    ctx.fillRect(px + 4, py + 2, 20, 6);
+    ctx.fillRect(px + (player.facing === 'right' ? 2 : 18), py + 6, 8, 12);
+
+    // Göz
+    ctx.fillStyle = '#000';
+    let eyeX = player.facing === 'right' ? px + 16 : px + 8;
+    ctx.fillRect(eyeX, py + 8, 3, 3);
+
+    // Bacaklar
+    ctx.fillStyle = '#1e3a8a';
+    let legOffset = Math.sin(player.animFrame) * 4;
+    if (!player.grounded) legOffset = 4;
+    ctx.fillRect(px + 6, py + 30, 6, 10 - legOffset);
+    ctx.fillRect(px + 16, py + 30, 6, 10 + legOffset);
+
+    // KARAKTERİN TEPESİNDEKİ "TUANA" İSMİ
+    ctx.font = 'bold 12px monospace';
+    ctx.textAlign = 'center';
+    let nameX = px + player.width / 2;
+    let nameY = py - 12;
+
+    // İsim Arka Planı
+    ctx.fillStyle = 'rgba(0,0,0,0.6)';
+    ctx.fillRect(nameX - 25, nameY - 11, 50, 15);
+    ctx.strokeStyle = '#facc15';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(nameX - 25, nameY - 11, 50, 15);
+
+    // İsim Metni
+    ctx.fillStyle = '#facc15';
+    ctx.fillText('TUANA', nameX, nameY);
+
+    ctx.restore();
+
+    // Yüzen Metinler (+100 Coin)
+    floatingTexts.forEach(ft => {
+        ctx.save();
+        ctx.globalAlpha = ft.alpha;
+        ctx.font = 'bold 14px sans-serif';
+        ctx.fillStyle = '#facc15';
+        ctx.fillText(ft.text, ft.x, ft.y);
+        ctx.restore();
+    });
+
+    // UI - Üst Bilgi Paneli (Skor, Can, Bölüm)
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+    ctx.fillRect(0, 0, canvas.width, 40);
+
+    ctx.font = 'bold 16px sans-serif';
+    ctx.fillStyle = '#fff';
+    ctx.textAlign = 'left';
+    ctx.fillText(`BÖLÜM: ${currentLevel}/3`, 20, 25);
+    ctx.fillText(`SKOR: ${score}`, 200, 25);
+
+    // Can Kalpleri
+    ctx.fillStyle = '#ef4444';
+    let hearts = '';
+    for (let i = 0; i < lives; i++) hearts += '❤️ ';
+    ctx.fillText(`CAN: ${hearts}`, 650, 25);
+
+    // EKRAN DURUMLARI (LEVEL CLEAR, GAME OVER, WIN)
+    if (gameState === 'LEVEL_CLEAR') {
+        ctx.fillStyle = 'rgba(0,0,0,0.7)';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = '#4ade80';
+        ctx.font = 'bold 36px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText(`BÖLÜM ${currentLevel} TAMAMLANDI!`, canvas.width / 2, canvas.height / 2);
+
+        levelClearTimer--;
+        if (levelClearTimer <= 0) {
+            currentLevel++;
+            loadLevel(currentLevel);
+            gameState = 'PLAYING';
+        }
+    } else if (gameState === 'GAME_OVER') {
+        ctx.fillStyle = 'rgba(0,0,0,0.85)';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = '#ef4444';
+        ctx.font = 'bold 42px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('OYNANAMADI - OYUN BİTTİ', canvas.width / 2, canvas.height / 2 - 20);
+        ctx.fillStyle = '#fff';
+        ctx.font = '20px sans-serif';
+        ctx.fillText('Yeniden Başlamak için "R" Tuşuna Basın', canvas.width / 2, canvas.height / 2 + 30);
+    } else if (gameState === 'WIN') {
+        ctx.fillStyle = 'rgba(0,0,0,0.85)';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = '#facc15';
+        ctx.font = 'bold 40px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('TEBRİKLER! OYUNU KAZANDIN!', canvas.width / 2, canvas.height / 2 - 30);
+        ctx.fillStyle = '#fff';
+        ctx.font = '22px sans-serif';
+        ctx.fillText(`Tuana Bütün Parkurları Başarıyla Tamamladı!`, canvas.width / 2, canvas.height / 2 + 10);
+        ctx.fillText(`Toplam Skor: ${score}`, canvas.width / 2, canvas.height / 2 + 45);
+        ctx.font = '16px sans-serif';
+        ctx.fillStyle = '#9ca3af';
+        ctx.fillText('Tekrar Oynamak için "R" Tuşuna Basın', canvas.width / 2, canvas.height / 2 + 85);
+    }
+}
+
+// Ana Oyun Döngüsü (Game Loop)
+function gameLoop() {
+    update();
+    draw();
+    requestAnimationFrame(gameLoop);
+}
+
+// Oyunu Başlat
+loadLevel(currentLevel);
+gameLoop();
+
+</script>
+</body>
+</html>
