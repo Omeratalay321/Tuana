@@ -12,7 +12,10 @@
             user-select: none;
             -webkit-user-select: none;
         }
-        body {
+        html, body {
+            width: 100%;
+            height: 100%;
+            height: 100dvh; /* Mobil tarayıcı barları için dinamik yükseklik */
             background: #111827;
             color: #fff;
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
@@ -20,7 +23,6 @@
             flex-direction: column;
             align-items: center;
             justify-content: center;
-            min-height: 100vh;
             overflow: hidden;
             touch-action: none;
         }
@@ -31,9 +33,9 @@
             overflow: hidden;
             background: #000;
             width: 100vw;
-            height: 100vh;
+            height: 100dvh;
             max-width: 900px;
-            max-height: 500px;
+            max-height: 100dvh;
             display: flex;
             justify-content: center;
             align-items: center;
@@ -47,45 +49,45 @@
         }
         .controls-overlay {
             position: absolute;
-            bottom: 15px;
+            bottom: 25px; /* Tuşları yukarı kaydırdık ki Chrome alt barı kapatmasın */
             left: 0;
             width: 100%;
             display: flex;
             justify-content: space-between;
-            padding: 0 25px;
+            padding: 0 20px;
             pointer-events: none;
             z-index: 10;
         }
         .touch-btn {
-            background: rgba(255, 255, 255, 0.3);
-            border: 2px solid rgba(255, 255, 255, 0.7);
+            background: rgba(255, 255, 255, 0.35);
+            border: 2px solid rgba(255, 255, 255, 0.8);
             border-radius: 50%;
-            width: 65px;
-            height: 65px;
+            width: 55px; /* Mobilde taşmasın diye ufak küçültüldü */
+            height: 55px;
             display: flex;
             align-items: center;
             justify-content: center;
             color: white;
             font-weight: bold;
-            font-size: 26px;
+            font-size: 22px;
             pointer-events: auto;
             touch-action: manipulation;
-            box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+            box-shadow: 0 4px 10px rgba(0,0,0,0.4);
         }
         .touch-btn:active {
-            background: rgba(255, 255, 255, 0.6);
-            transform: scale(0.95);
+            background: rgba(255, 255, 255, 0.7);
+            transform: scale(0.92);
         }
         .btn-group {
             display: flex;
-            gap: 15px;
+            gap: 12px;
         }
         
         /* Mobil Dikey Ekran Uyarısı */
         #orient-warning {
             display: none;
             position: fixed;
-            top: 0; left: 0; width: 100vw; height: 100vh;
+            top: 0; left: 0; width: 100vw; height: 100dvh;
             background: #0f172a;
             z-index: 999;
             color: #fff;
@@ -200,10 +202,10 @@ let currentLevel = 1;
 let totalLevels = 5;
 let score = 0;
 let lives = 3;
-let gameState = 'PLAYING'; // PLAYING, LEVEL_CLEAR, GAME_OVER, WIN
+let gameState = 'PLAYING';
 let levelClearTimer = 0;
 
-// Admin Hile Kombinasyonu Yönetimi (3 Sağa, 3 Sola, 3 Yukarı)
+// Admin Hile Kombinasyonu (3 Sağa, 3 Sola, 3 Yukarı)
 const adminCode = ['RIGHT', 'RIGHT', 'RIGHT', 'LEFT', 'LEFT', 'LEFT', 'UP', 'UP', 'UP'];
 let inputBuffer = [];
 let adminNoticeTimer = 0;
@@ -214,7 +216,6 @@ function checkAdminCode(action) {
         inputBuffer.shift();
     }
     
-    // Kombinasyon eşleşti mi kontrol et
     if (inputBuffer.length === adminCode.length) {
         let isMatch = true;
         for (let i = 0; i < adminCode.length; i++) {
@@ -232,7 +233,7 @@ function checkAdminCode(action) {
 
 function triggerAdminSkip() {
     sound.playWin();
-    adminNoticeTimer = 120; // Hile bildirim metni süresi
+    adminNoticeTimer = 120;
     if (currentLevel < totalLevels) {
         currentLevel++;
         loadLevel(currentLevel);
@@ -471,7 +472,7 @@ function resetGame() {
     loadLevel(currentLevel);
 }
 
-// Çarpışma Kontrol Fonksiyonları
+// Çarpışma Kontrolleri
 function checkRectCollision(r1, r2) {
     return r1.x < r2.x + r2.width &&
            r1.x + r1.width > r2.x &&
@@ -587,14 +588,14 @@ function update() {
         }
     });
 
-    // Diken/Tehlike Çarpışması
+    // Diken/Tehlike
     hazards.forEach(h => {
         if (checkRectCollision(player, h)) {
             die();
         }
     });
 
-    // Bölüm Sonu Bayrak Kontrolü
+    // Bölüm Sonu
     if (checkRectCollision(player, exitFlag)) {
         sound.playWin();
         if (currentLevel < totalLevels) {
@@ -617,7 +618,6 @@ function update() {
 
 // Çizim Döngüsü
 function draw() {
-    // Arka Plan
     ctx.fillStyle = '#5c94fc';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
@@ -685,7 +685,7 @@ function draw() {
         }
     });
 
-    // Bitiş Bayrağı
+    // Bayrak
     ctx.fillStyle = '#6b7280';
     ctx.fillRect(exitFlag.x, exitFlag.y, 6, exitFlag.height);
     ctx.fillStyle = '#22c55e';
@@ -701,32 +701,27 @@ function draw() {
     let px = player.x;
     let py = player.y;
 
-    // Kıyafet
     ctx.fillStyle = '#ec4899';
     ctx.fillRect(px + 4, py + 14, 20, 16);
 
-    // Yüz
     ctx.fillStyle = '#fed7aa';
     ctx.fillRect(px + 6, py + 4, 16, 12);
 
-    // Saç
     ctx.fillStyle = '#78350f';
     ctx.fillRect(px + 4, py + 2, 20, 6);
     ctx.fillRect(px + (player.facing === 'right' ? 2 : 18), py + 6, 8, 12);
 
-    // Göz
     ctx.fillStyle = '#000';
     let eyeX = player.facing === 'right' ? px + 16 : px + 8;
     ctx.fillRect(eyeX, py + 8, 3, 3);
 
-    // Bacaklar
     ctx.fillStyle = '#1e3a8a';
     let legOffset = Math.sin(player.animFrame) * 4;
     if (!player.grounded) legOffset = 4;
     ctx.fillRect(px + 6, py + 30, 6, 10 - legOffset);
     ctx.fillRect(px + 16, py + 30, 6, 10 + legOffset);
 
-    // TUANA İsmi
+    // İsim Etiketi
     ctx.font = 'bold 12px monospace';
     ctx.textAlign = 'center';
     let nameX = px + player.width / 2;
@@ -743,7 +738,7 @@ function draw() {
 
     ctx.restore();
 
-    // Yüzen Skolar
+    // Yüzen Yazılar
     floatingTexts.forEach(ft => {
         ctx.save();
         ctx.globalAlpha = ft.alpha;
@@ -753,7 +748,7 @@ function draw() {
         ctx.restore();
     });
 
-    // Üst Panel
+    // Üst Bilgi Paneli
     ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
     ctx.fillRect(0, 0, canvas.width, 40);
 
@@ -768,7 +763,7 @@ function draw() {
     for (let i = 0; i < lives; i++) hearts += '❤️ ';
     ctx.fillText(`CAN: ${hearts}`, 650, 25);
 
-    // Admin Hile Bildirimi
+    // Hile Bildirimi
     if (adminNoticeTimer > 0) {
         ctx.fillStyle = '#38bdf8';
         ctx.font = 'bold 16px sans-serif';
@@ -818,14 +813,12 @@ function draw() {
     }
 }
 
-// Oyun Döngüsü
 function gameLoop() {
     update();
     draw();
     requestAnimationFrame(gameLoop);
 }
 
-// Oyunu Başlat
 loadLevel(currentLevel);
 gameLoop();
 
